@@ -36,15 +36,23 @@ jobs:
     - name: 📦 Install Dependencies
       run: pip install requests
     
-    - name: 🔐 Create Configuration
+    - name: 🔐 Create Configuration & Schedule Files
       run: |
         python3 << 'PYTHON'
         import json
         import os
         
-        schedule_json = os.environ.get('BLUESKY_SCHEDULE', '[]')
-        schedule = json.loads(schedule_json)
+        schedule_json = os.environ.get('BLUESKY_SCHEDULE', '{}')
+        schedule_data = json.loads(schedule_json)
         
+        # Create BLUESKY_SCHEDULE.json
+        with open('BLUESKY_SCHEDULE.json', 'w') as f:
+            json.dump(schedule_data, f, indent=2)
+        
+        # Extract schedule list for config
+        schedule = schedule_data.get('schedule', []) if isinstance(schedule_data, dict) else schedule_data
+        
+        # Create bluesky_config.json
         config = {
             "ai_providers": {
                 "groq": os.environ.get('GROQ_API_KEY', ''),
@@ -61,7 +69,8 @@ jobs:
         with open('bluesky_config.json', 'w') as f:
             json.dump(config, f, indent=2)
         
-        print(f"✓ Config created: {len(schedule)} days")
+        print(f"✓ BLUESKY_SCHEDULE.json created")
+        print(f"✓ bluesky_config.json created: {len(schedule)} days")
         PYTHON
       env:
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
