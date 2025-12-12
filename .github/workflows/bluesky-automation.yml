@@ -1,0 +1,100 @@
+name: Bluesky Automation
+
+# Post 3 times daily
+on:
+  schedule:
+    # 9:00 AM PKT (4:00 AM UTC)
+    - cron: '0 4 * * *'
+    
+    # 2:00 PM PKT (9:00 AM UTC)
+    - cron: '0 9 * * *'
+    
+    # 7:00 PM PKT (2:00 PM UTC)
+    - cron: '0 14 * * *'
+  
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      time_slot:
+        description: 'Time slot (09:00, 14:00, 19:00, or "all")'
+        required: true
+        default: '09:00'
+
+jobs:
+  post-threads:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout
+      uses: actions/checkout@v4
+    
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: 📦 Install Dependencies
+      run: pip install requests
+    
+    - name: 🔐 Create Configuration
+      run: |
+        python3 << 'PYTHON'
+        import json
+        import os
+        
+        schedule_json = os.environ.get('BLUESKY_SCHEDULE', '[]')
+        schedule = json.loads(schedule_json)
+        
+        config = {
+            "ai_providers": {
+                "groq": os.environ.get('GROQ_API_KEY', ''),
+                "gemini": os.environ.get('GEMINI_API_KEY', '')
+            },
+            "bluesky": {
+                "handle": os.environ.get('BLUESKY_HANDLE', ''),
+                "app_password": os.environ.get('BLUESKY_APP_PASSWORD', '')
+            },
+            "posting_times": ["09:00", "14:00", "19:00"],
+            "schedule": schedule
+        }
+        
+        with open('bluesky_config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        print(f"✓ Config created: {len(schedule)} days")
+        PYTHON
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+        BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+        BLUESKY_SCHEDULE: ${{ secrets.BLUESKY_SCHEDULE }}
+    
+    - name: 📅 Determine Time Slot
+      id: time_slot
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "slot=${{ github.event.inputs.time_slot }}" >> $GITHUB_OUTPUT
+          echo "Manual: ${{ github.event.inputs.time_slot }}"
+        else
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" = "04" ]; then
+            echo "slot=09:00" >> $GITHUB_OUTPUT
+          elif [ "$HOUR" = "09" ]; then
+            echo "slot=14:00" >> $GITHUB_OUTPUT
+          elif [ "$HOUR" = "14" ]; then
+            echo "slot=19:00" >> $GITHUB_OUTPUT
+          fi
+          echo "Scheduled: $(cat $GITHUB_OUTPUT)"
+        fi
+    
+    - name: 🚀 Post Thread
+      run: python bluesky_automation.py ${{ steps.time_slot.outputs.slot }}
+    
+    - name: 📊 Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bluesky-logs-${{ github.run_number }}
+        path: bluesky_posts_log.json
+        retention-days: 90
